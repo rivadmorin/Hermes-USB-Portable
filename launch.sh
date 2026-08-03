@@ -43,6 +43,15 @@ esac
 
 RUNTIME_DIR="$CACHE_DIR/runtimes/${PLATFORM}-${ARCH}"
 
+# Generates a stable, short 8-character unique identifier for a given string (typically a path).
+# This is used to create unique names for things like virtual environments (venv) that
+# need to exist on the host filesystem but stay tied to this specific portable directory.
+#
+# Fallback logic:
+# - Uses `md5sum` (Linux standard) if available.
+# - Falls back to `md5` (macOS standard) if `md5sum` is missing.
+# - If neither is available, it strips non-alphanumeric characters from the directory's basename
+#   and takes the first 8 characters.
 portable_id() {
     if command -v md5sum >/dev/null 2>&1; then
         printf '%s' "$1" | md5sum | cut -c1-8
@@ -185,6 +194,14 @@ GRAY="${ESC}[90m"
 # ---------------------------------------------------------------------------
 # Status Detection
 # ---------------------------------------------------------------------------
+# Analyzes the current state of the Hermes environment by checking various files.
+# Updates global variables used by the interactive menu to display:
+# - SETUP_STATUS: Whether the user has configured API keys in data/.env
+# - PROVIDER_NAME / MODEL_NAME: The active LLM configuration from data/config.yaml
+# - GATEWAY_STATUS: Whether the background FastAPI server is currently running,
+#   by checking gateway.pid and validating the process ID.
+# - HERMES_VERSION: Extracts the current version from the downloaded source code.
+# This function is called before displaying or refreshing the menu.
 detect_status() {
     SETUP_STATUS="Not configured"
     SETUP_ICON="[x]"
