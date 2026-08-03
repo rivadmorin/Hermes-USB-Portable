@@ -250,6 +250,12 @@ detect_status() {
 # ---------------------------------------------------------------------------
 # Main Menu
 # ---------------------------------------------------------------------------
+# Displays the main interactive terminal dashboard menu for Hermes Portable.
+# Renders the current configuration state (setup status, provider, model, gateway)
+# and presents a list of primary actions for the user to choose from.
+# Globals: SETUP_STATUS, PROVIDER_NAME, MODEL_NAME, GATEWAY_STATUS, HERMES_VERSION
+# Arguments: None
+# Returns: None (Loops until user exits)
 show_menu() {
     clear
     echo ""
@@ -290,12 +296,22 @@ show_menu() {
     esac
 }
 
+# Launches the main Hermes chat interface in the terminal.
+# Returns to the main menu when the chat is exited.
+# Globals: None
+# Arguments: None
+# Returns: None
 menu_chat() {
     clear
     hermes
     show_menu
 }
 
+# Launches the interactive setup wizard to configure API keys and models.
+# Re-detects status afterward to update the dashboard.
+# Globals: None
+# Arguments: None
+# Returns: None
 menu_setup() {
     clear
     hermes setup
@@ -303,6 +319,11 @@ menu_setup() {
     show_menu
 }
 
+# Toggles the background FastAPI gateway server (starts if stopped, stops if running).
+# Re-detects status afterward to update the dashboard.
+# Globals: GATEWAY_STATUS, GATEWAY_PID
+# Arguments: None
+# Returns: None
 menu_gateway() {
     if [ "$GATEWAY_STATUS" = "Running (PID $GATEWAY_PID)" ]; then
         hermes gateway stop
@@ -319,6 +340,10 @@ menu_gateway() {
     show_menu
 }
 
+# Exits the launcher menu and returns to the host shell.
+# Globals: None
+# Arguments: None
+# Returns: Exits the script with status 0
 menu_exit() {
     clear
     echo ""
@@ -330,6 +355,10 @@ menu_exit() {
 # ---------------------------------------------------------------------------
 # Advanced Menu
 # ---------------------------------------------------------------------------
+# Displays the advanced options menu for debugging, configuration, and updates.
+# Globals: None
+# Arguments: None
+# Returns: None (Loops until user goes back to main menu)
 show_advanced() {
     clear
     echo ""
@@ -359,6 +388,10 @@ show_advanced() {
     esac
 }
 
+# Runs the Hermes environment doctor to check for missing dependencies or config issues.
+# Globals: None
+# Arguments: None
+# Returns: None
 adv_doctor() {
     clear
     hermes doctor
@@ -366,6 +399,10 @@ adv_doctor() {
     show_advanced
 }
 
+# Displays the tail (last 20 lines) of the background gateway logs.
+# Globals: HERMES_HOME
+# Arguments: None
+# Returns: None
 adv_logs() {
     clear
     if [ -f "$HERMES_HOME/logs/gateway.log" ]; then
@@ -379,12 +416,21 @@ adv_logs() {
     show_advanced
 }
 
+# Opens the Hermes configuration file in the default terminal text editor.
+# Globals: None
+# Arguments: None
+# Returns: None
 adv_config() {
     clear
     hermes config edit
     show_advanced
 }
 
+# Restarts the background gateway server.
+# Re-detects status afterward and returns to the main menu.
+# Globals: None
+# Arguments: None
+# Returns: None
 adv_restart() {
     hermes gateway restart
     echo ""
@@ -394,6 +440,10 @@ adv_restart() {
     show_menu
 }
 
+# Checks for and applies updates to the Hermes Agent source code.
+# Globals: None
+# Arguments: None
+# Returns: None
 adv_update() {
     clear
     hermes update
