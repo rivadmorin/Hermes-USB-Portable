@@ -361,7 +361,11 @@ step "Installing Hermes Python dependencies ..."
 echo "        This may take 3-10 minutes depending on your connection."
 VENV_PYTHON="$VENV_DIR/bin/python"
 
-# Try uv first (faster), fall back to pip on unsupported filesystem (e.g. ExFAT)
+# Dependency Installation Strategy:
+# We use 'uv' with --link-mode=copy for blazingly fast installations.
+# However, 'uv' can fail on specific file systems like ExFAT (commonly used on USB drives)
+# because ExFAT does not support symlinks/hardlinks reliably.
+# If 'uv' fails, we gracefully degrade by installing 'pip' into the venv and using it instead.
 if ! "$UV_EXE" pip install --python "$VENV_PYTHON" --link-mode=copy -e "$SRC_DIR/hermes-agent[all]" 2>/dev/null; then
   echo "        uv install failed — falling back to pip ..."
   if ! "$VENV_PYTHON" -m ensurepip --upgrade >/dev/null 2>&1; then
