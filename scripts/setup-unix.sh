@@ -21,19 +21,41 @@ find "$PORTABLE_ROOT" -name "._*" -depth -exec rm -f {} \; 2>/dev/null || true
 CACHE_DIR="$PORTABLE_ROOT/.cache"
 SRC_DIR="$PORTABLE_ROOT/src"
 
+# Prints a formatted step header to the console
+# Globals: None
+# Arguments:
+#   $1: The step description message
+# Returns: None
 step() {
   echo ""
   echo "[SETUP] $1"
 }
 
+# Prints a formatted success message to the console
+# Globals: None
+# Arguments:
+#   $1: The success description message
+# Returns: None
 done_msg() {
   echo "[OK]    $1"
 }
 
+# Prints a formatted warning message to the console
+# Globals: None
+# Arguments:
+#   $1: The warning description message
+# Returns: None
 warn() {
   echo "[WARN]  $1"
 }
 
+# Generates a stable, 8-character unique identifier for a given string path
+# Uses md5sum (Linux) or md5 (macOS) if available, falling back to a sanitized basename.
+# This prevents collisions when running from different portable drive mounts.
+# Globals: None
+# Arguments:
+#   $1: The input string to hash (usually a directory path)
+# Returns: A short 8-character string ID printed to stdout
 portable_id() {
   if command -v md5sum >/dev/null 2>&1; then
     printf '%s' "$1" | md5sum | cut -c1-8
@@ -50,6 +72,7 @@ portable_id() {
 OS_RAW="$(uname -s)"
 ARCH_RAW="$(uname -m)"
 
+# Normalize operating system string (e.g. Darwin -> macos)
 case "$OS_RAW" in
 Linux*) PLATFORM="linux" ;;
 Darwin*) PLATFORM="macos" ;;
@@ -59,6 +82,7 @@ Darwin*) PLATFORM="macos" ;;
   ;;
 esac
 
+# Normalize architecture string (e.g. aarch64 -> arm64, amd64 -> x64)
 case "$ARCH_RAW" in
 x86_64 | amd64) ARCH="x64" ;;
 aarch64 | arm64) ARCH="arm64" ;;
@@ -113,6 +137,14 @@ fi
 
 SOURCE_URL="https://github.com/NousResearch/hermes-agent/archive/refs/heads/main.tar.gz"
 
+# Safely downloads a file from a URL to a local destination, with caching and integrity checks.
+# If the file exists and is valid, skips the download.
+# Automatically handles interrupted downloads by verifying tarball integrity.
+# Globals: None
+# Arguments:
+#   $1: The URL to download
+#   $2: The destination file path
+# Returns: 0 on success (or cache hit), 1 on error
 download() {
   local url="$1"
   local out="$2"
@@ -121,13 +153,16 @@ download() {
 
   if [ -f "$out" ]; then
     local size
+    # Cross-platform stat: -f%z for BSD/macOS, -c%s for GNU/Linux
     size="$(stat -f%z "$out" 2>/dev/null || stat -c%s "$out" 2>/dev/null || echo 0)"
     if [ "$size" -gt 0 ]; then
       # Verify archive integrity to handle interrupted downloads
       local corrupt=0
       if [[ "$name" == *.tar.gz ]]; then
+        # 'gzip -t' tests the integrity of the compressed file
         gzip -t "$out" 2>/dev/null || corrupt=1
       elif [[ "$name" == *.tar.xz ]]; then
+        # 'xz -t' tests the integrity of the xz-compressed file
         xz -t "$out" 2>/dev/null || corrupt=1
       fi
 
@@ -167,6 +202,14 @@ download() {
   echo "        Download complete ($((dsize / 1024 / 1024)) MB)."
 }
 
+# Safely extracts a .tar.xz or .tar.gz archive into a destination directory.
+# Uses a temporary directory for extraction to ensure atomic updates and avoid corruption.
+# Automatically cleans up on failure.
+# Globals: None
+# Arguments:
+#   $1: The path to the archive file
+#   $2: The destination directory
+# Returns: 0 on success, 1 on error
 extract_txz() {
   local archive="$1"
   local dest="$2"
@@ -182,12 +225,16 @@ extract_txz() {
   fi
   mkdir -p "$dest"
   mkdir -p "$tmp_dir"
+
+  # --strip-components=1 removes the top-level directory inside the tarball
   if ! tar -xf "$archive" -C "$tmp_dir" --strip-components=1; then
     rm -rf "$tmp_dir"
     rm -f "$archive"
     echo "        ERROR: tar extraction failed for $(basename "$archive") (corrupted archive deleted)"
     return 1
   fi
+
+  # Copy extracted files to destination, resolving symlinks with -L
   cp -R -L "$tmp_dir"/. "$dest"/ 2>/dev/null || true
   rm -rf "$tmp_dir"
 }

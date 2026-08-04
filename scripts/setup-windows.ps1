@@ -40,19 +40,49 @@ $SourceUrl  = "https://github.com/NousResearch/hermes-agent/archive/refs/heads/m
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+<#
+.SYNOPSIS
+Prints a formatted step header to the console.
+.PARAMETER msg
+The step description message.
+#>
 function Write-Step($msg) {
     Write-Host ""
     Write-Host "[SETUP] $msg" -ForegroundColor Cyan
 }
 
+<#
+.SYNOPSIS
+Prints a formatted success message to the console.
+.PARAMETER msg
+The success description message.
+#>
 function Write-Done($msg) {
     Write-Host "[OK]    $msg" -ForegroundColor Green
 }
 
+<#
+.SYNOPSIS
+Prints a formatted warning message to the console.
+.PARAMETER msg
+The warning description message.
+#>
 function Write-Warn($msg) {
     Write-Host "[WARN]  $msg" -ForegroundColor Yellow
 }
 
+<#
+.SYNOPSIS
+Safely downloads a file from a URL to a local destination, with caching.
+.DESCRIPTION
+If the file exists and is valid (> 0 bytes), skips the download.
+Prefers curl.exe for native progress bar UI (speed, percent, time left, time spent).
+Includes a fallback to Invoke-WebRequest if curl.exe is missing or fails.
+.PARAMETER Url
+The URL to download from.
+.PARAMETER OutFile
+The local destination file path.
+#>
 function Download-File($Url, $OutFile) {
     $name = Split-Path $Url -Leaf
     if (Test-Path $OutFile) {
@@ -120,6 +150,17 @@ function Download-File($Url, $OutFile) {
     Write-Host $msgDone -ForegroundColor Green
 }
 
+<#
+.SYNOPSIS
+Extracts a .tar.gz archive into a destination directory.
+.DESCRIPTION
+Prefers using the built-in Windows tar.exe to avoid environment path issues (like Git Bash overriding standard utilities).
+Strips the top-level folder component automatically using --strip-components=1.
+.PARAMETER Archive
+Path to the archive file.
+.PARAMETER Destination
+Directory where contents should be extracted.
+#>
 function Extract-TarGz($Archive, $Destination) {
     $label = Split-Path $Archive -Leaf
     Write-Host "        Extracting $label ..." -NoNewline
@@ -141,6 +182,17 @@ function Extract-TarGz($Archive, $Destination) {
     Write-Host " done" -ForegroundColor Green
 }
 
+<#
+.SYNOPSIS
+Extracts a .zip archive into a destination directory.
+.DESCRIPTION
+First attempts extraction using PowerShell Expand-Archive. If that fails, falls back to using Windows built-in tar.exe.
+Automatically detects and throws an error if extraction leaves the destination directory empty.
+.PARAMETER Archive
+Path to the archive file.
+.PARAMETER Destination
+Directory where contents should be extracted.
+#>
 function Extract-Zip($Archive, $Destination) {
     $label = Split-Path $Archive -Leaf
     Write-Host "        Extracting $label ..." -NoNewline
@@ -191,6 +243,16 @@ function Extract-Zip($Archive, $Destination) {
     Write-Host " done" -ForegroundColor Green
 }
 
+<#
+.SYNOPSIS
+Moves the contents of a top-level subfolder into a destination directory.
+.DESCRIPTION
+Used after unzipping archives that contain everything nested inside a single root directory (e.g. Git portable zip).
+.PARAMETER Source
+The parent directory to search for a subfolder.
+.PARAMETER Dest
+The final destination path.
+#>
 function Move-SubfolderContents($Source, $Dest) {
     $sub = Get-ChildItem $Source -Directory | Select-Object -First 1
     if ($sub) {
@@ -202,6 +264,16 @@ function Move-SubfolderContents($Source, $Dest) {
     }
 }
 
+<#
+.SYNOPSIS
+Recursively copies all contents from a source directory into a destination directory.
+.DESCRIPTION
+Robustly wipes the target destination directory beforehand, handling locked files or permission errors gracefully.
+.PARAMETER Source
+The directory to copy files from.
+.PARAMETER Dest
+The directory to copy files to.
+#>
 function Copy-DirectoryContents($Source, $Dest) {
     if (Test-Path $Dest) {
         try {
