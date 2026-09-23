@@ -1,19 +1,28 @@
-# ============================================================================
-# Hermes Portable - Windows Runtime Setup
-# ============================================================================
-# Downloads and installs portable Python, Node.js, uv, ripgrep, Git,
-# clones Hermes source, creates venv, and installs dependencies.
-# ============================================================================
+<#
+.SYNOPSIS
+    Hermes Portable - Windows Runtime First-Run Setup Script.
+
+.DESCRIPTION
+    Downloads and installs portable Python 3.11, Node.js 22 LTS, uv package manager,
+    ripgrep, and optional portable MinGit. Clones the latest Hermes Agent source code,
+    creates a sandboxed virtual environment, and installs Python/Node dependencies.
+
+.PARAMETER Root
+    Specifies the absolute or relative path to the root directory of the portable installation.
+
+.EXAMPLE
+    powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows.ps1 -Root "C:\hermes-portable"
+#>
 
 param(
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, HelpMessage = "Path to the root directory of hermes-portable")]
     [string]$Root
 )
 
 $ErrorActionPreference = "Stop"
 
 # ---------------------------------------------------------------------------
-# Paths
+# Directories & Path Setup
 # ---------------------------------------------------------------------------
 $CacheDir   = Join-Path $Root ".cache"
 $RuntimeDir = Join-Path $CacheDir "runtimes\windows-x64"
@@ -21,14 +30,14 @@ $SrcDir     = Join-Path $Root "src"
 $BinDir     = Join-Path $RuntimeDir "bin"
 $TempDir    = Join-Path $Root ".tmp"
 
-
+# Create required runtime folder hierarchy
 New-Item -ItemType Directory -Force -Path $RuntimeDir, $SrcDir, $BinDir, $TempDir | Out-Null
 
 # Clean up macOS metadata junk files (._*) from exFAT drives to prevent pip/uv errors
 Get-ChildItem -Path $Root -Filter "._*" -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 
 # ---------------------------------------------------------------------------
-# Download URLs (pinned for reliability)
+# Download URLs (pinned versions for reliability and reproducibility)
 # ---------------------------------------------------------------------------
 $PythonUrl  = "https://github.com/astral-sh/python-build-standalone/releases/download/20260602/cpython-3.11.15+20260602-x86_64-pc-windows-msvc-install_only.tar.gz"
 $NodeUrl    = "https://nodejs.org/dist/v22.22.3/node-v22.22.3-win-x64.zip"
@@ -38,13 +47,15 @@ $GitUrl     = "https://github.com/git-for-windows/git/releases/download/v2.54.0.
 $SourceUrl  = "https://github.com/NousResearch/hermes-agent/archive/refs/heads/main.zip"
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helper Functions
 # ---------------------------------------------------------------------------
+
 <#
 .SYNOPSIS
-Prints a formatted step header to the console.
+    Prints a formatted step header to the console.
+
 .PARAMETER msg
-The step description message.
+    The step description message to display.
 #>
 function Write-Step($msg) {
     Write-Host ""
@@ -53,9 +64,10 @@ function Write-Step($msg) {
 
 <#
 .SYNOPSIS
-Prints a formatted success message to the console.
+    Prints a formatted success message to the console.
+
 .PARAMETER msg
-The success description message.
+    The success description message to display.
 #>
 function Write-Done($msg) {
     Write-Host "[OK]    $msg" -ForegroundColor Green
@@ -63,9 +75,10 @@ function Write-Done($msg) {
 
 <#
 .SYNOPSIS
-Prints a formatted warning message to the console.
+    Prints a formatted warning message to the console.
+
 .PARAMETER msg
-The warning description message.
+    The warning description message to display.
 #>
 function Write-Warn($msg) {
     Write-Host "[WARN]  $msg" -ForegroundColor Yellow
@@ -73,15 +86,17 @@ function Write-Warn($msg) {
 
 <#
 .SYNOPSIS
-Safely downloads a file from a URL to a local destination, with caching.
+    Safely downloads a file from a URL to a local destination with caching.
+
 .DESCRIPTION
-If the file exists and is valid (> 0 bytes), skips the download.
-Prefers curl.exe for native progress bar UI (speed, percent, time left, time spent).
-Includes a fallback to Invoke-WebRequest if curl.exe is missing or fails.
+    If the destination file exists and has a size greater than 0 bytes, download is skipped.
+    Prefers native curl.exe for download progress visualization, with a fallback to Invoke-WebRequest.
+
 .PARAMETER Url
-The URL to download from.
+    The remote HTTP/HTTPS URL to download.
+
 .PARAMETER OutFile
-The local destination file path.
+    The local file destination path.
 #>
 function Download-File($Url, $OutFile) {
     $name = Split-Path $Url -Leaf
@@ -152,14 +167,16 @@ function Download-File($Url, $OutFile) {
 
 <#
 .SYNOPSIS
-Extracts a .tar.gz archive into a destination directory.
+    Extracts a .tar.gz archive into a destination directory.
+
 .DESCRIPTION
-Prefers using the built-in Windows tar.exe to avoid environment path issues (like Git Bash overriding standard utilities).
-Strips the top-level folder component automatically using --strip-components=1.
+    Uses Windows built-in tar.exe to unpack archives and automatically strip the top-level directory wrapper.
+
 .PARAMETER Archive
-Path to the archive file.
+    Path to the tar.gz archive file.
+
 .PARAMETER Destination
-Directory where contents should be extracted.
+    Directory where contents should be extracted.
 #>
 function Extract-TarGz($Archive, $Destination) {
     $label = Split-Path $Archive -Leaf
@@ -184,14 +201,16 @@ function Extract-TarGz($Archive, $Destination) {
 
 <#
 .SYNOPSIS
-Extracts a .zip archive into a destination directory.
+    Extracts a .zip archive into a destination directory.
+
 .DESCRIPTION
-First attempts extraction using PowerShell Expand-Archive. If that fails, falls back to using Windows built-in tar.exe.
-Automatically detects and throws an error if extraction leaves the destination directory empty.
+    Uses Expand-Archive with fallback to tar.exe for reliable extraction on Windows.
+
 .PARAMETER Archive
-Path to the archive file.
+    Path to the zip archive file.
+
 .PARAMETER Destination
-Directory where contents should be extracted.
+    Directory where contents should be extracted.
 #>
 function Extract-Zip($Archive, $Destination) {
     $label = Split-Path $Archive -Leaf
@@ -245,13 +264,13 @@ function Extract-Zip($Archive, $Destination) {
 
 <#
 .SYNOPSIS
-Moves the contents of a top-level subfolder into a destination directory.
-.DESCRIPTION
-Used after unzipping archives that contain everything nested inside a single root directory (e.g. Git portable zip).
+    Moves the contents of a top-level subfolder into a destination directory.
+
 .PARAMETER Source
-The parent directory to search for a subfolder.
+    The parent directory containing a nested subfolder.
+
 .PARAMETER Dest
-The final destination path.
+    The target destination directory.
 #>
 function Move-SubfolderContents($Source, $Dest) {
     $sub = Get-ChildItem $Source -Directory | Select-Object -First 1
@@ -266,13 +285,13 @@ function Move-SubfolderContents($Source, $Dest) {
 
 <#
 .SYNOPSIS
-Recursively copies all contents from a source directory into a destination directory.
-.DESCRIPTION
-Robustly wipes the target destination directory beforehand, handling locked files or permission errors gracefully.
+    Recursively copies all contents from a source directory into a destination directory.
+
 .PARAMETER Source
-The directory to copy files from.
+    The source directory to copy files from.
+
 .PARAMETER Dest
-The directory to copy files to.
+    The target destination directory.
 #>
 function Copy-DirectoryContents($Source, $Dest) {
     if (Test-Path $Dest) {
@@ -287,7 +306,7 @@ function Copy-DirectoryContents($Source, $Dest) {
 }
 
 # ---------------------------------------------------------------------------
-# Health check: if ready.flag exists but core files are missing, start fresh
+# Health Check: verify existing setup state
 # ---------------------------------------------------------------------------
 $readyFlag = Join-Path $RuntimeDir "ready.flag"
 if (Test-Path $readyFlag) {
@@ -300,7 +319,7 @@ if (Test-Path $readyFlag) {
 }
 
 # ---------------------------------------------------------------------------
-# 1. Portable Python
+# Step 1: Install Portable Python
 # ---------------------------------------------------------------------------
 Write-Step "Installing portable Python 3.11 ..."
 $pyArchive = Join-Path $RuntimeDir "python.tar.gz"
@@ -309,7 +328,7 @@ Extract-TarGz $pyArchive (Join-Path $RuntimeDir "python")
 Write-Done "Python ready"
 
 # ---------------------------------------------------------------------------
-# 2. Node.js
+# Step 2: Install Node.js
 # ---------------------------------------------------------------------------
 Write-Step "Installing Node.js 22 LTS ..."
 $nodeArchive = Join-Path $RuntimeDir "node.zip"
@@ -324,7 +343,7 @@ if ($LASTEXITCODE -ne 0) { throw "npm verification failed" }
 Write-Done "Node.js ready"
 
 # ---------------------------------------------------------------------------
-# 3. uv (Python package manager)
+# Step 3: Install uv Package Manager
 # ---------------------------------------------------------------------------
 Write-Step "Installing uv ..."
 $uvArchive = Join-Path $RuntimeDir "uv.zip"
@@ -333,7 +352,7 @@ Extract-Zip $uvArchive (Join-Path $RuntimeDir "uv")
 Write-Done "uv ready"
 
 # ---------------------------------------------------------------------------
-# 4. ripgrep
+# Step 4: Install ripgrep Search Tool
 # ---------------------------------------------------------------------------
 Write-Step "Installing ripgrep ..."
 $rgArchive = Join-Path $RuntimeDir "rg.zip"
@@ -349,7 +368,7 @@ if ($rgExe) {
 }
 
 # ---------------------------------------------------------------------------
-# 5. Git (MinGit) - optional
+# Step 5: Install Portable MinGit (Optional)
 # ---------------------------------------------------------------------------
 Write-Step "Installing portable Git (optional) ..."
 $gitArchive = Join-Path $RuntimeDir "git.zip"
@@ -362,7 +381,7 @@ try {
 }
 
 # ---------------------------------------------------------------------------
-# 6. Hermes source code
+# Step 6: Download Hermes Agent Source Code
 # ---------------------------------------------------------------------------
 Write-Step "Downloading Hermes Agent source code ..."
 $srcArchive = Join-Path $RuntimeDir "source.zip"
@@ -378,7 +397,7 @@ Copy-DirectoryContents $srcSub.FullName $destSrc
 Write-Done "Source code ready"
 
 # ---------------------------------------------------------------------------
-# 7. Create virtual environment
+# Step 7: Create Isolated Virtual Environment
 # ---------------------------------------------------------------------------
 Write-Step "Creating Python virtual environment ..."
 $pythonExe = Join-Path $RuntimeDir "python\python.exe"
@@ -397,14 +416,13 @@ if ($LASTEXITCODE -ne 0) { throw "Virtual environment verification failed" }
 Write-Done "Virtual environment ready"
 
 # ---------------------------------------------------------------------------
-# 8. Install Hermes dependencies
+# Step 8: Install Core Hermes Dependencies
 # ---------------------------------------------------------------------------
 $ErrorActionPreference = "Continue"
 Write-Step "Installing Hermes Python dependencies ..."
 Write-Host "        This may take 3-10 minutes depending on your connection."
 $venvPython = Join-Path $venvDir "Scripts\python.exe"
 
-# Try uv first (faster), fall back to pip on unsupported filesystem (e.g. ExFAT)
 & $uvExe pip install --python $venvPython --link-mode=copy -e "$destSrc[all]"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "        uv install failed - falling back to pip ..."
@@ -415,7 +433,7 @@ if ($LASTEXITCODE -ne 0) {
 Write-Done "Dependencies installed"
 
 # ---------------------------------------------------------------------------
-# 9. Install provider dependencies
+# Step 9: Install Model Provider Dependencies
 # ---------------------------------------------------------------------------
 Write-Step "Installing provider dependencies ..."
 & $uvExe pip install --python $venvPython --link-mode=copy "anthropic>=0.39.0"
@@ -431,12 +449,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # ---------------------------------------------------------------------------
-# 10. Install messaging dependencies (Telegram, etc.)
-# ---------------------------------------------------------------------------
-# Hermes [all] intentionally excludes messaging deps for size.
-# The lazy-install system is supposed to auto-install on first use,
-# but it can fail silently in some environments. Pre-install here
-# so Telegram works out of the box.
+# Step 10: Install Messaging Dependencies (Telegram)
 # ---------------------------------------------------------------------------
 Write-Step "Installing messaging dependencies (Telegram) ..."
 & $uvExe pip install --python $venvPython --link-mode=copy "python-telegram-bot[webhooks]==22.6"
@@ -452,7 +465,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # ---------------------------------------------------------------------------
-# 11. Install Playwright browsers (optional, for web tools)
+# Step 11: Install Playwright Browsers (Optional)
 # ---------------------------------------------------------------------------
 Write-Step "Installing Playwright browsers (optional) ..."
 $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $RuntimeDir "playwright"
@@ -464,11 +477,11 @@ try {
 }
 
 # ---------------------------------------------------------------------------
-# 12. Mark ready
+# Step 12: Complete Setup & Create Ready Flag
 # ---------------------------------------------------------------------------
 "" | Out-File (Join-Path $RuntimeDir "ready.flag") -Encoding utf8
 
-# Cleanup temp
+# Cleanup temporary download directory
 Remove-Item $TempDir -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host ""

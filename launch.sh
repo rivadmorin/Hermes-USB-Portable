@@ -10,8 +10,9 @@
 
 set -e
 
-# Resolve portable root (directory containing this script)
+# Resolve portable root directory (directory containing this script)
 PORTABLE_ROOT="$(cd "$(dirname "$0")" && pwd)"
+# Define local paths for user data, cache, and source code
 HERMES_HOME="$PORTABLE_ROOT/data"
 CACHE_DIR="$PORTABLE_ROOT/.cache"
 SRC_DIR="$PORTABLE_ROOT/src"
@@ -22,6 +23,7 @@ SRC_DIR="$PORTABLE_ROOT/src"
 OS_RAW="$(uname -s)"
 ARCH_RAW="$(uname -m)"
 
+# Normalize operating system name
 case "$OS_RAW" in
     Linux*)     PLATFORM="linux" ;;
     Darwin*)    PLATFORM="macos" ;;
@@ -32,6 +34,7 @@ case "$OS_RAW" in
         ;;
 esac
 
+# Normalize CPU architecture name
 case "$ARCH_RAW" in
     x86_64|amd64) ARCH="x64" ;;
     aarch64|arm64) ARCH="arm64" ;;
@@ -52,6 +55,13 @@ RUNTIME_DIR="$CACHE_DIR/runtimes/${PLATFORM}-${ARCH}"
 # - Falls back to `md5` (macOS standard) if `md5sum` is missing.
 # - If neither is available, it strips non-alphanumeric characters from the directory's basename
 #   and takes the first 8 characters.
+#
+# Globals:
+#   None
+# Arguments:
+#   $1 - Path string to generate unique ID for
+# Returns:
+#   Outputs 8-character hex/alphanumeric string to stdout
 portable_id() {
     if command -v md5sum >/dev/null 2>&1; then
         printf '%s' "$1" | md5sum | cut -c1-8
@@ -63,8 +73,9 @@ portable_id() {
 }
 
 # ---------------------------------------------------------------------------
-# First-run setup
+# First-run setup check
 # ---------------------------------------------------------------------------
+# If ready.flag is missing, trigger setup-unix.sh to download and set up runtimes
 if [ ! -f "$RUNTIME_DIR/ready.flag" ]; then
     echo ""
     echo "============================================"
@@ -97,7 +108,7 @@ else
     VIRTUAL_ENV="$RUNTIME_DIR/venv"
 fi
 
-# If the venv is missing (e.g. after a reboot purged $TMPDIR), rebuild it.
+# If the venv is missing (e.g. after a reboot purged $TMPDIR), rebuild it dynamically.
 if [ ! -x "$VIRTUAL_ENV/bin/python" ]; then
     echo ""
     echo "[INFO] Local venv not found (temp was likely cleared). Rebuilding ..."
@@ -135,6 +146,7 @@ if [ ! -x "$VIRTUAL_ENV/bin/python" ]; then
     echo "[OK]    Venv rebuilt."
 fi
 
+# Export isolated environment variables
 export HERMES_HOME="$HERMES_HOME"
 export VIRTUAL_ENV
 export PATH="$VIRTUAL_ENV/bin:$RUNTIME_DIR/python/bin:$RUNTIME_DIR/node/bin:$RUNTIME_DIR/uv:$RUNTIME_DIR/bin:$PATH"
@@ -152,7 +164,7 @@ export HOME="$PORTABLE_ROOT/.cache/unix-home"
 mkdir -p "$HOME"
 
 # ---------------------------------------------------------------------------
-# Launch Hermes
+# Launch Hermes Verification
 # ---------------------------------------------------------------------------
 if [ ! -d "$SRC_DIR/hermes-agent" ]; then
     echo "[ERROR] Hermes source not found. Please delete .cache and try again."
@@ -173,7 +185,7 @@ if [ $# -gt 0 ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# ANSI Colors
+# ANSI Color Constants
 # ---------------------------------------------------------------------------
 ESC='\033'
 RESET="${ESC}[0m"
@@ -201,7 +213,14 @@ GRAY="${ESC}[90m"
 # - GATEWAY_STATUS: Whether the background FastAPI server is currently running,
 #   by checking gateway.pid and validating the process ID.
 # - HERMES_VERSION: Extracts the current version from the downloaded source code.
-# This function is called before displaying or refreshing the menu.
+#
+# Globals:
+#   SETUP_STATUS, SETUP_ICON, SETUP_COLOR, PROVIDER_NAME, MODEL_NAME
+#   GATEWAY_STATUS, GATEWAY_ICON, GATEWAY_COLOR, GATEWAY_PID, HERMES_VERSION
+# Arguments:
+#   None
+# Returns:
+#   None
 detect_status() {
     SETUP_STATUS="Not configured"
     SETUP_ICON="[x]"
@@ -253,9 +272,13 @@ detect_status() {
 # Displays the main interactive terminal dashboard menu for Hermes Portable.
 # Renders the current configuration state (setup status, provider, model, gateway)
 # and presents a list of primary actions for the user to choose from.
-# Globals: SETUP_STATUS, PROVIDER_NAME, MODEL_NAME, GATEWAY_STATUS, HERMES_VERSION
-# Arguments: None
-# Returns: None (Loops until user exits)
+#
+# Globals:
+#   SETUP_STATUS, PROVIDER_NAME, MODEL_NAME, GATEWAY_STATUS, HERMES_VERSION
+# Arguments:
+#   None
+# Returns:
+#   None (Loops until user selects exit)
 show_menu() {
     clear
     echo ""
@@ -296,22 +319,30 @@ show_menu() {
     esac
 }
 
-# Launches the main Hermes chat interface in the terminal.
-# Returns to the main menu when the chat is exited.
-# Globals: None
-# Arguments: None
-# Returns: None
+# Launches the main Hermes chat CLI interactive interface in the terminal.
+# Returns to the main menu when the chat session ends.
+#
+# Globals:
+#   None
+# Arguments:
+#   None
+# Returns:
+#   None
 menu_chat() {
     clear
     hermes
     show_menu
 }
 
-# Launches the interactive setup wizard to configure API keys and models.
-# Re-detects status afterward to update the dashboard.
-# Globals: None
-# Arguments: None
-# Returns: None
+# Launches the interactive setup wizard to configure API keys, providers, and models.
+# Re-detects environment status afterward to refresh the dashboard display.
+#
+# Globals:
+#   None
+# Arguments:
+#   None
+# Returns:
+#   None
 menu_setup() {
     clear
     hermes setup
@@ -319,11 +350,15 @@ menu_setup() {
     show_menu
 }
 
-# Toggles the background FastAPI gateway server (starts if stopped, stops if running).
-# Re-detects status afterward to update the dashboard.
-# Globals: GATEWAY_STATUS, GATEWAY_PID
-# Arguments: None
-# Returns: None
+# Toggles the background gateway server (starts if stopped, stops if running).
+# Re-detects environment status afterward to update the dashboard display.
+#
+# Globals:
+#   GATEWAY_STATUS, GATEWAY_PID
+# Arguments:
+#   None
+# Returns:
+#   None
 menu_gateway() {
     if [ "$GATEWAY_STATUS" = "Running (PID $GATEWAY_PID)" ]; then
         hermes gateway stop
@@ -341,9 +376,13 @@ menu_gateway() {
 }
 
 # Exits the launcher menu and returns to the host shell.
-# Globals: None
-# Arguments: None
-# Returns: Exits the script with status 0
+#
+# Globals:
+#   None
+# Arguments:
+#   None
+# Returns:
+#   Exits process with status 0
 menu_exit() {
     clear
     echo ""
@@ -355,10 +394,14 @@ menu_exit() {
 # ---------------------------------------------------------------------------
 # Advanced Menu
 # ---------------------------------------------------------------------------
-# Displays the advanced options menu for debugging, configuration, and updates.
-# Globals: None
-# Arguments: None
-# Returns: None (Loops until user goes back to main menu)
+# Displays the advanced options menu for diagnostics, logs, configuration, and updates.
+#
+# Globals:
+#   None
+# Arguments:
+#   None
+# Returns:
+#   None (Loops until user returns to main menu)
 show_advanced() {
     clear
     echo ""
@@ -388,10 +431,14 @@ show_advanced() {
     esac
 }
 
-# Runs the Hermes environment doctor to check for missing dependencies or config issues.
-# Globals: None
-# Arguments: None
-# Returns: None
+# Runs the Hermes doctor diagnostic tool to inspect virtualenv, dependencies, and settings.
+#
+# Globals:
+#   None
+# Arguments:
+#   None
+# Returns:
+#   None
 adv_doctor() {
     clear
     hermes doctor
@@ -399,10 +446,14 @@ adv_doctor() {
     show_advanced
 }
 
-# Displays the tail (last 20 lines) of the background gateway logs.
-# Globals: HERMES_HOME
-# Arguments: None
-# Returns: None
+# Displays the tail (last 20 lines) of the background gateway log file.
+#
+# Globals:
+#   HERMES_HOME
+# Arguments:
+#   None
+# Returns:
+#   None
 adv_logs() {
     clear
     if [ -f "$HERMES_HOME/logs/gateway.log" ]; then
@@ -416,21 +467,28 @@ adv_logs() {
     show_advanced
 }
 
-# Opens the Hermes configuration file in the default terminal text editor.
-# Globals: None
-# Arguments: None
-# Returns: None
+# Opens the Hermes YAML configuration file in the system default text editor.
+#
+# Globals:
+#   None
+# Arguments:
+#   None
+# Returns:
+#   None
 adv_config() {
     clear
     hermes config edit
     show_advanced
 }
 
-# Restarts the background gateway server.
-# Re-detects status afterward and returns to the main menu.
-# Globals: None
-# Arguments: None
-# Returns: None
+# Restarts the background gateway service process.
+#
+# Globals:
+#   None
+# Arguments:
+#   None
+# Returns:
+#   None
 adv_restart() {
     hermes gateway restart
     echo ""
@@ -440,10 +498,14 @@ adv_restart() {
     show_menu
 }
 
-# Checks for and applies updates to the Hermes Agent source code.
-# Globals: None
-# Arguments: None
-# Returns: None
+# Fetches and applies updates for the Hermes Agent source code.
+#
+# Globals:
+#   None
+# Arguments:
+#   None
+# Returns:
+#   None
 adv_update() {
     clear
     hermes update
@@ -452,7 +514,7 @@ adv_update() {
 }
 
 # ---------------------------------------------------------------------------
-# Entry point
+# Script Entry Point
 # ---------------------------------------------------------------------------
 detect_status
 show_menu

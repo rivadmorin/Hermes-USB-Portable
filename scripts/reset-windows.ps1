@@ -1,12 +1,23 @@
-# ============================================================================
-# Hermes Portable - Reset Script (Windows)
-# ============================================================================
-# Deletes downloaded runtimes and source code to trigger fresh first-run setup.
-#
-# Usage:
-#   .\scripts\reset-windows.ps1 -Mode soft    # Keep data/ folder (API keys, config)
-#   .\scripts\reset-windows.ps1 -Mode full    # Delete everything including data/
-# ============================================================================
+<#
+.SYNOPSIS
+    Hermes Portable - Windows Reset Utility Script.
+
+.DESCRIPTION
+    Deletes downloaded portable runtimes, virtual environments, and source code to trigger
+    a clean setup on the next launch. Supports soft reset (preserving user settings and chat
+    history) and full reset (completely wiping data and configurations).
+
+.PARAMETER Mode
+    Specifies the reset mode to execute:
+    - "soft": Deletes .cache/runtimes and src/hermes-agent, but preserves data/ (.env, config.yaml, sessions).
+    - "full": Deletes .cache, src/hermes-agent, and data/ (complete wipe).
+
+.EXAMPLE
+    .\scripts\reset-windows.ps1 -Mode soft
+
+.EXAMPLE
+    .\scripts\reset-windows.ps1 -Mode full
+#>
 
 param(
     [ValidateSet("soft", "full")]
@@ -16,7 +27,10 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Split-Path $PSScriptRoot -Parent
 
-# If no mode provided, ask interactively
+# ---------------------------------------------------------------------------
+# Interactive Mode Selection Prompt
+# ---------------------------------------------------------------------------
+# Prompt user for selection if mode parameter was omitted
 if (-not $Mode) {
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host "   Hermes Portable - Reset" -ForegroundColor Cyan
@@ -38,14 +52,17 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "   Hermes Portable - Reset ($Mode)" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 
-# Stop any running gateway first
+# ---------------------------------------------------------------------------
+# Gateway Process & Lock File Termination
+# ---------------------------------------------------------------------------
+# Stop any running gateway service and remove auth lock file
 $lockFile = Join-Path $Root "data\auth.lock"
 if (Test-Path $lockFile) {
     Write-Host "[INFO]  Stopping gateway (removing lock) ..." -ForegroundColor Yellow
     Remove-Item $lockFile -Force -ErrorAction SilentlyContinue
 }
 
-# Also try to kill any hermes gateway processes
+# Kill running Python processes matching hermes gateway
 Get-Process | Where-Object { $_.ProcessName -like "*python*" -or $_.ProcessName -like "*hermes*" } | ForEach-Object {
     try {
         $cmd = (Get-WmiObject Win32_Process -Filter "ProcessId=$($_.Id)").CommandLine
@@ -56,7 +73,9 @@ Get-Process | Where-Object { $_.ProcessName -like "*python*" -or $_.ProcessName 
     } catch {}
 }
 
-# --- Soft reset: delete runtimes + source, keep data ---
+# ---------------------------------------------------------------------------
+# Collect Target Directories to Delete
+# ---------------------------------------------------------------------------
 $foldersToDelete = @()
 
 $runtimes = Join-Path $Root ".cache\runtimes"
@@ -69,7 +88,7 @@ if (Test-Path $src) {
     $foldersToDelete += $src
 }
 
-# --- Full reset: also delete data ---
+# Include data and entire .cache folder if full reset was requested
 if ($Mode -eq "full") {
     $data = Join-Path $Root "data"
     if (Test-Path $data) {
@@ -81,7 +100,9 @@ if ($Mode -eq "full") {
     }
 }
 
-# Confirm before deleting
+# ---------------------------------------------------------------------------
+# Confirmation Prompt
+# ---------------------------------------------------------------------------
 Write-Host ""
 Write-Host "The following folders will be DELETED:" -ForegroundColor Yellow
 foreach ($f in $foldersToDelete) {
@@ -107,7 +128,9 @@ if ($confirm -ne "yes") {
     exit 0
 }
 
-# Perform deletion
+# ---------------------------------------------------------------------------
+# Perform Directory Deletion
+# ---------------------------------------------------------------------------
 foreach ($f in $foldersToDelete) {
     if (Test-Path $f) {
         Write-Host "[DEL]   $f ..." -NoNewline
