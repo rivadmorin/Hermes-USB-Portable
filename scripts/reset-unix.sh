@@ -11,9 +11,13 @@
 
 set -e
 
+# Parse reset mode parameter passed via command line
 MODE="${1:-}"
 
-# If no mode provided, ask interactively
+# ---------------------------------------------------------------------------
+# Interactive Mode Selection
+# ---------------------------------------------------------------------------
+# If no mode option was supplied via command-line arguments, prompt the user
 if [ -z "$MODE" ]; then
     echo "========================================"
     echo "   Hermes Portable - Reset"
@@ -31,6 +35,7 @@ if [ -z "$MODE" ]; then
     fi
 fi
 
+# Validate input parameter mode
 if [ "$MODE" != "soft" ] && [ "$MODE" != "full" ]; then
     echo "Usage: $0 [soft|full]"
     echo ""
@@ -39,25 +44,32 @@ if [ "$MODE" != "soft" ] && [ "$MODE" != "full" ]; then
     exit 1
 fi
 
+# Resolve root directory of portable repository
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "========================================"
 echo "   Hermes Portable - Reset ($MODE)"
 echo "========================================"
 
-# Stop any running gateway first
+# ---------------------------------------------------------------------------
+# Process Termination & Lock File Cleanup
+# ---------------------------------------------------------------------------
+# Stop any running gateway background process first and remove lock file
 LOCK_FILE="$ROOT/data/auth.lock"
 if [ -f "$LOCK_FILE" ]; then
     echo "[INFO]  Stopping gateway (removing lock) ..."
     rm -f "$LOCK_FILE"
 fi
 
-# Try to kill any hermes gateway processes
+# Terminate running Hermes gateway processes gracefully or forcefully
 pkill -f "hermes.*gateway" 2>/dev/null || true
 
-# Collect folders to delete
+# ---------------------------------------------------------------------------
+# Collect Directories to Delete
+# ---------------------------------------------------------------------------
 FOLDERS=()
 
+# Always include runtimes and downloaded source code for soft or full reset
 if [ -d "$ROOT/.cache/runtimes" ]; then
     FOLDERS+=("$ROOT/.cache/runtimes")
 fi
@@ -66,6 +78,7 @@ if [ -d "$ROOT/src/hermes-agent" ]; then
     FOLDERS+=("$ROOT/src/hermes-agent")
 fi
 
+# Include data and entire cache for full reset
 if [ "$MODE" = "full" ]; then
     if [ -d "$ROOT/data" ]; then
         FOLDERS+=("$ROOT/data")
@@ -75,7 +88,10 @@ if [ "$MODE" = "full" ]; then
     fi
 fi
 
-# Show what will be deleted
+# ---------------------------------------------------------------------------
+# Confirmation Prompt
+# ---------------------------------------------------------------------------
+# Display list of target directories and disk usage before proceeding
 echo ""
 echo "The following folders will be DELETED:"
 for f in "${FOLDERS[@]}"; do
@@ -100,7 +116,9 @@ if [ "$CONFIRM" != "yes" ]; then
     exit 0
 fi
 
-# Perform deletion
+# ---------------------------------------------------------------------------
+# Perform Directory Cleanup
+# ---------------------------------------------------------------------------
 for f in "${FOLDERS[@]}"; do
     if [ -d "$f" ]; then
         echo -n "[DEL]   $f ..."

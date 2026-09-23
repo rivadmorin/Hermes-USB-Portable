@@ -9,18 +9,20 @@ REM On first run, it downloads ~600MB of runtime files automatically.
 REM All data stays in the "data\" folder - nothing touches the host computer.
 REM ============================================================================
 
-REM Resolve portable root (directory containing this script)
+REM Resolve portable root directory (directory containing this batch script)
 set "PORTABLE_ROOT=%~dp0"
 set "PORTABLE_ROOT=%PORTABLE_ROOT:~0,-1%"
 
+REM Define local paths for home data, cache, runtimes, and source code
 set "HERMES_HOME=%PORTABLE_ROOT%\data"
 set "CACHE_DIR=%PORTABLE_ROOT%\.cache"
 set "RUNTIME_DIR=%CACHE_DIR%\runtimes\windows-x64"
 set "SRC_DIR=%PORTABLE_ROOT%\src"
 
 REM ---------------------------------------------------------------------------
-REM First-run setup
+REM First-Run Setup Check
 REM ---------------------------------------------------------------------------
+REM Triggers setup-windows.ps1 if ready.flag is missing
 if not exist "%RUNTIME_DIR%\ready.flag" (
     echo.
     echo ============================================
@@ -40,8 +42,9 @@ if not exist "%RUNTIME_DIR%\ready.flag" (
 )
 
 REM ---------------------------------------------------------------------------
-REM Environment isolation - keep everything inside the portable folder
+REM Environment Isolation Configuration
 REM ---------------------------------------------------------------------------
+REM Prepends portable executables and libraries to process environment variables
 set "VIRTUAL_ENV=%RUNTIME_DIR%\venv"
 set "PATH=%VIRTUAL_ENV%\Scripts;%RUNTIME_DIR%\python;%RUNTIME_DIR%\python\Scripts;%RUNTIME_DIR%\node;%RUNTIME_DIR%\uv;%RUNTIME_DIR%\bin;%PATH%"
 set "PYTHONNOUSERSITE=1"
@@ -53,13 +56,14 @@ set "PLAYWRIGHT_BROWSERS_PATH=%RUNTIME_DIR%\playwright"
 set "NODE_PATH=%RUNTIME_DIR%\node\node_modules"
 set "NPM_CONFIG_PREFIX=%RUNTIME_DIR%\node"
 
-REM Prevent Node from writing to host appdata
+REM Prevent Node/npm from writing cache or logs to host user profile directories
 set "APPDATA=%PORTABLE_ROOT%\.cache\windows-appdata"
 set "LOCALAPPDATA=%PORTABLE_ROOT%\.cache\windows-localappdata"
 
 REM ---------------------------------------------------------------------------
-REM Update pyvenv.cfg with the current absolute path to ensure portability
+REM Virtual Environment Path Calibration
 REM ---------------------------------------------------------------------------
+REM Updates pyvenv.cfg with current absolute path to preserve portability across drive letters
 if exist "%VIRTUAL_ENV%\pyvenv.cfg" (
     for /f "tokens=2" %%v in ('"%RUNTIME_DIR%\python\python.exe" --version 2^>nul') do set "PYTHON_VERSION=%%v"
     if not defined PYTHON_VERSION set "PYTHON_VERSION=3.11.15"
@@ -71,7 +75,7 @@ if exist "%VIRTUAL_ENV%\pyvenv.cfg" (
 )
 
 REM ---------------------------------------------------------------------------
-REM Launch Hermes
+REM Launch Hermes Pre-check & Direct Argument Routing
 REM ---------------------------------------------------------------------------
 if not exist "%SRC_DIR%\hermes-agent" (
     echo [ERROR] Hermes source not found. Please delete .cache and try again.
@@ -81,20 +85,20 @@ if not exist "%SRC_DIR%\hermes-agent" (
 
 cd /d "%SRC_DIR%\hermes-agent"
 
-REM Strip "hermes" from the start of arguments if user typed "launch.bat hermes setup"
+REM Strip leading "hermes" command if user executed "launch.bat hermes setup"
 set "ARGS=%*"
 if /I "%~1"=="hermes" (
     set "ARGS=%ARGS:~7%"
 )
 
-REM If explicit arguments were passed, run Hermes directly (skip menu)
+REM Direct CLI execution mode: bypass interactive menu if arguments were passed
 if not "%ARGS%"=="" (
     python -c "from hermes_cli.main import main; main()" %ARGS%
     exit /b
 )
 
 REM ---------------------------------------------------------------------------
-REM ANSI Color Setup
+REM ANSI Escape Sequence & Color Definitions
 REM ---------------------------------------------------------------------------
 for /f %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
 set "RESET=%ESC%[0m"
@@ -115,8 +119,9 @@ set "BG_CYAN=%ESC%[46m%ESC%[30m"
 set "BG_DARK=%ESC%[40m%ESC%[37m"
 
 REM ---------------------------------------------------------------------------
-REM Status Detection
+REM Status Detection Routine
 REM ---------------------------------------------------------------------------
+REM Analyzes `.env`, `config.yaml`, `gateway.pid`, and `__init__.py` to display status
 :detect_status
 set "SETUP_STATUS=Not configured"
 set "SETUP_ICON=[x]"
@@ -173,8 +178,9 @@ if exist "%SRC_DIR%\hermes-agent\hermes_cli\__init__.py" (
 )
 
 REM ---------------------------------------------------------------------------
-REM Main Menu
+REM Main Interactive Dashboard Menu
 REM ---------------------------------------------------------------------------
+REM Renders state dashboard and options list
 :show_menu
 echo.
 echo.
@@ -213,18 +219,22 @@ if errorlevel 1 goto :menu_chat
 goto :show_menu
 
 REM ---------------------------------------------------------------------------
-REM Menu Actions
+REM Main Menu Action Labels
 REM ---------------------------------------------------------------------------
+
+REM Launches interactive chat TUI
 :menu_chat
 echo.
 python -c "from hermes_cli.main import main; main()"
 goto :show_menu
 
+REM Launches Hermes setup wizard
 :menu_setup
 echo.
 python -c "from hermes_cli.main import main; main()" setup
 goto :detect_status
 
+REM Toggles background gateway process
 :menu_gateway
 if "!GATEWAY_STATUS!"=="Running (PID !GATEWAY_PID!)" (
     python -c "from hermes_cli.main import main; main()" gateway stop
@@ -239,6 +249,7 @@ if "!GATEWAY_STATUS!"=="Running (PID !GATEWAY_PID!)" (
 pause
 goto :detect_status
 
+REM Exits launcher
 :menu_exit
 echo.
 echo.
@@ -247,8 +258,9 @@ echo.
 exit /b
 
 REM ---------------------------------------------------------------------------
-REM Advanced Menu
+REM Advanced Options Menu
 REM ---------------------------------------------------------------------------
+REM Sub-menu for diagnostic tools, log viewer, editor, and updater
 :show_advanced
 echo.
 echo.
@@ -275,12 +287,14 @@ if errorlevel 2 goto :adv_logs
 if errorlevel 1 goto :adv_doctor
 goto :show_advanced
 
+REM Runs Hermes environment doctor command
 :adv_doctor
 echo.
 python -c "from hermes_cli.main import main; main()" doctor
 pause
 goto :show_advanced
 
+REM Tail-reads gateway log file using PowerShell
 :adv_logs
 echo.
 if exist "%HERMES_HOME%\logs\gateway.log" (
@@ -293,11 +307,13 @@ echo.
 pause
 goto :show_advanced
 
+REM Opens YAML configuration file in system editor
 :adv_config
 echo.
 python -c "from hermes_cli.main import main; main()" config edit
 goto :show_advanced
 
+REM Restarts background gateway server
 :adv_restart
 python -c "from hermes_cli.main import main; main()" gateway restart
 echo.
@@ -305,6 +321,7 @@ echo %BRIGHT_GREEN%Gateway restarted.%RESET%
 pause
 goto :detect_status
 
+REM Fetches and applies updates for Hermes Agent source code
 :adv_update
 echo.
 python -c "from hermes_cli.main import main; main()" update

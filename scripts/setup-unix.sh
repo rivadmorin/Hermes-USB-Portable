@@ -8,6 +8,7 @@
 
 set -e
 
+# Parse portable root directory passed from caller script
 PORTABLE_ROOT="$1"
 if [ -z "$PORTABLE_ROOT" ]; then
   echo "Usage: $0 <portable-root>"
@@ -17,45 +18,56 @@ fi
 # Clean up macOS metadata junk files (._*) from exFAT drives to prevent pip/uv errors
 find "$PORTABLE_ROOT" -name "._*" -depth -exec rm -f {} \; 2>/dev/null || true
 
-
 CACHE_DIR="$PORTABLE_ROOT/.cache"
 SRC_DIR="$PORTABLE_ROOT/src"
 
-# Prints a formatted step header to the console
-# Globals: None
+# Prints a formatted step header to the console.
+#
+# Globals:
+#   None
 # Arguments:
-#   $1: The step description message
-# Returns: None
+#   $1 - Message string describing the setup step
+# Returns:
+#   None
 step() {
   echo ""
   echo "[SETUP] $1"
 }
 
-# Prints a formatted success message to the console
-# Globals: None
+# Prints a formatted success message to the console.
+#
+# Globals:
+#   None
 # Arguments:
-#   $1: The success description message
-# Returns: None
+#   $1 - Message string describing completed operation
+# Returns:
+#   None
 done_msg() {
   echo "[OK]    $1"
 }
 
-# Prints a formatted warning message to the console
-# Globals: None
+# Prints a formatted warning message to the console.
+#
+# Globals:
+#   None
 # Arguments:
-#   $1: The warning description message
-# Returns: None
+#   $1 - Message string describing the warning
+# Returns:
+#   None
 warn() {
   echo "[WARN]  $1"
 }
 
-# Generates a stable, 8-character unique identifier for a given string path
+# Generates a stable, 8-character unique identifier for a given string path.
 # Uses md5sum (Linux) or md5 (macOS) if available, falling back to a sanitized basename.
 # This prevents collisions when running from different portable drive mounts.
-# Globals: None
+#
+# Globals:
+#   None
 # Arguments:
-#   $1: The input string to hash (usually a directory path)
-# Returns: A short 8-character string ID printed to stdout
+#   $1 - The input path string to hash
+# Returns:
+#   Outputs a short 8-character hex/alphanumeric string ID to stdout
 portable_id() {
   if command -v md5sum >/dev/null 2>&1; then
     printf '%s' "$1" | md5sum | cut -c1-8
@@ -67,7 +79,7 @@ portable_id() {
 }
 
 # ---------------------------------------------------------------------------
-# Detect platform
+# Detect Platform & Architecture
 # ---------------------------------------------------------------------------
 OS_RAW="$(uname -s)"
 ARCH_RAW="$(uname -m)"
@@ -100,7 +112,7 @@ VENV_PATH_FILE="$RUNTIME_DIR/venv.path"
 mkdir -p "$RUNTIME_DIR" "$SRC_DIR" "$BIN_DIR" "$TMP_DIR"
 
 # ---------------------------------------------------------------------------
-# Health check: if ready.flag exists but core files are missing, start fresh
+# Health Check: verify runtime files integrity
 # ---------------------------------------------------------------------------
 if [ -f "$RUNTIME_DIR/ready.flag" ]; then
   if [ -f "$VENV_PATH_FILE" ]; then
@@ -140,11 +152,14 @@ SOURCE_URL="https://github.com/NousResearch/hermes-agent/archive/refs/heads/main
 # Safely downloads a file from a URL to a local destination, with caching and integrity checks.
 # If the file exists and is valid, skips the download.
 # Automatically handles interrupted downloads by verifying tarball integrity.
-# Globals: None
+#
+# Globals:
+#   None
 # Arguments:
-#   $1: The URL to download
-#   $2: The destination file path
-# Returns: 0 on success (or cache hit), 1 on error
+#   $1 - The HTTP/HTTPS URL to download
+#   $2 - The destination file path
+# Returns:
+#   0 on success (or cache hit), 1 on error
 download() {
   local url="$1"
   local out="$2"
@@ -159,10 +174,8 @@ download() {
       # Verify archive integrity to handle interrupted downloads
       local corrupt=0
       if [[ "$name" == *.tar.gz ]]; then
-        # 'gzip -t' tests the integrity of the compressed file
         gzip -t "$out" 2>/dev/null || corrupt=1
       elif [[ "$name" == *.tar.xz ]]; then
-        # 'xz -t' tests the integrity of the xz-compressed file
         xz -t "$out" 2>/dev/null || corrupt=1
       fi
 
@@ -205,11 +218,14 @@ download() {
 # Safely extracts a .tar.xz or .tar.gz archive into a destination directory.
 # Uses a temporary directory for extraction to ensure atomic updates and avoid corruption.
 # Automatically cleans up on failure.
-# Globals: None
+#
+# Globals:
+#   None
 # Arguments:
-#   $1: The path to the archive file
-#   $2: The destination directory
-# Returns: 0 on success, 1 on error
+#   $1 - The path to the archive file
+#   $2 - The destination directory
+# Returns:
+#   0 on success, 1 on error
 extract_txz() {
   local archive="$1"
   local dest="$2"
@@ -240,7 +256,7 @@ extract_txz() {
 }
 
 # ---------------------------------------------------------------------------
-# 1. Portable Python
+# Step 1: Install Portable Python
 # ---------------------------------------------------------------------------
 step "Installing portable Python 3.11 ..."
 PY_ARCHIVE="$RUNTIME_DIR/python.tar.gz"
@@ -248,7 +264,6 @@ if ! download "$PYTHON_URL" "$PY_ARCHIVE"; then
   echo "[ERROR] Failed to download Python. Check your internet connection."
   exit 1
 fi
-# Bug fix: skip re-extraction if already unpacked (saves ~30s on repeat runs)
 if [ ! -d "$RUNTIME_DIR/python/bin" ]; then
   extract_txz "$PY_ARCHIVE" "$RUNTIME_DIR/python"
 else
@@ -257,7 +272,7 @@ fi
 done_msg "Python ready"
 
 # ---------------------------------------------------------------------------
-# 2. Node.js
+# Step 2: Install Node.js
 # ---------------------------------------------------------------------------
 step "Installing Node.js 22 LTS ..."
 NODE_ARCHIVE="$RUNTIME_DIR/node.tar.xz"
@@ -267,7 +282,6 @@ fi
 if ! download "$NODE_URL" "$NODE_ARCHIVE"; then
   warn "Node.js download failed — web tools may be limited"
 else
-  # Bug fix: skip re-extraction if already unpacked
   if [ ! -d "$RUNTIME_DIR/node/bin" ]; then
     if [ "$PLATFORM" = "macos" ]; then
       extract_txz "$NODE_ARCHIVE" "$RUNTIME_DIR/node" || {
@@ -285,7 +299,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 3. uv
+# Step 3: Install uv Package Manager
 # ---------------------------------------------------------------------------
 step "Installing uv ..."
 UV_ARCHIVE="$RUNTIME_DIR/uv.tar.gz"
@@ -305,7 +319,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 4. ripgrep
+# Step 4: Install ripgrep
 # ---------------------------------------------------------------------------
 step "Installing ripgrep ..."
 RG_ARCHIVE="$RUNTIME_DIR/rg.tar.gz"
@@ -329,7 +343,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 5. Hermes source code
+# Step 5: Download Hermes Agent Source Code
 # ---------------------------------------------------------------------------
 step "Downloading Hermes Agent source code ..."
 SRC_ARCHIVE="$RUNTIME_DIR/source.tar.gz"
@@ -345,7 +359,7 @@ mv "$TMP_DIR/source" "$SRC_DIR/hermes-agent"
 done_msg "Source code ready"
 
 # ---------------------------------------------------------------------------
-# 6. macOS gatekeeper / permissions cleanup
+# Step 6: macOS Gatekeeper Permissions Cleanup
 # ---------------------------------------------------------------------------
 if [ "$PLATFORM" = "macos" ]; then
   step "Removing macOS quarantine attributes ..."
@@ -356,14 +370,14 @@ if [ "$PLATFORM" = "macos" ]; then
   done_msg "Gatekeeper attributes cleared"
 fi
 
-# Make sure binaries are executable
+# Ensure all binaries have executable permissions
 chmod -R +x "$RUNTIME_DIR/python/bin" 2>/dev/null || true
 chmod -R +x "$RUNTIME_DIR/node/bin" 2>/dev/null || true
 chmod -R +x "$RUNTIME_DIR/uv" 2>/dev/null || true
 chmod -R +x "$BIN_DIR" 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
-# 7. Create virtual environment
+# Step 7: Create Isolated Python Virtual Environment
 # ---------------------------------------------------------------------------
 step "Creating Python virtual environment ..."
 PYTHON3_EXE="$RUNTIME_DIR/python/bin/python3"
@@ -402,17 +416,15 @@ fi
 done_msg "Virtual environment ready"
 
 # ---------------------------------------------------------------------------
-# 8. Install Hermes dependencies
+# Step 8: Install Core Hermes Dependencies
 # ---------------------------------------------------------------------------
 step "Installing Hermes Python dependencies ..."
 echo "        This may take 3-10 minutes depending on your connection."
 VENV_PYTHON="$VENV_DIR/bin/python"
 
 # Dependency Installation Strategy:
-# We use 'uv' with --link-mode=copy for blazingly fast installations.
-# However, 'uv' can fail on specific file systems like ExFAT (commonly used on USB drives)
-# because ExFAT does not support symlinks/hardlinks reliably.
-# If 'uv' fails, we gracefully degrade by installing 'pip' into the venv and using it instead.
+# Use 'uv' with --link-mode=copy for fast installations.
+# If 'uv' fails on ExFAT drives, fall back to pip.
 if ! "$UV_EXE" pip install --python "$VENV_PYTHON" --link-mode=copy -e "$SRC_DIR/hermes-agent[all]" 2>/dev/null; then
   echo "        uv install failed — falling back to pip ..."
   if ! "$VENV_PYTHON" -m ensurepip --upgrade >/dev/null 2>&1; then
@@ -426,7 +438,7 @@ fi
 done_msg "Dependencies installed"
 
 # ---------------------------------------------------------------------------
-# 9. Install provider dependencies
+# Step 9: Install Model Provider Dependencies
 # ---------------------------------------------------------------------------
 step "Installing provider dependencies ..."
 if ! "$UV_EXE" pip install --python "$VENV_PYTHON" --link-mode=copy "anthropic>=0.39.0" 2>/dev/null; then
@@ -440,12 +452,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 10. Install messaging dependencies (Telegram, etc.)
-# ---------------------------------------------------------------------------
-# Hermes [all] intentionally excludes messaging deps for size.
-# The lazy-install system is supposed to auto-install on first use,
-# but it can fail silently in some environments. Pre-install here
-# so Telegram works out of the box.
+# Step 10: Install Messaging Dependencies (Telegram, etc.)
 # ---------------------------------------------------------------------------
 step "Installing messaging dependencies (Telegram) ..."
 if ! "$UV_EXE" pip install --python "$VENV_PYTHON" --link-mode=copy "python-telegram-bot[webhooks]==22.6" 2>/dev/null; then
@@ -459,7 +466,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 11. Install Playwright browsers (optional)
+# Step 11: Install Playwright Browsers (Optional)
 # ---------------------------------------------------------------------------
 step "Installing Playwright browsers (optional) ..."
 export PLAYWRIGHT_BROWSERS_PATH="$RUNTIME_DIR/playwright"
@@ -470,7 +477,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 12. Mark ready
+# Step 12: Complete Setup & Mark Ready
 # ---------------------------------------------------------------------------
 touch "$RUNTIME_DIR/ready.flag"
 rm -rf "$TMP_DIR"
